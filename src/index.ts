@@ -30,7 +30,13 @@ app.get('/admin', (c) => {
 })
 
 app.get('/api/chats', async (c) => {
-  const query = `SELECT id, title, type FROM chats ORDER BY type, title;`
+  const query = `
+    SELECT id, title, type FROM chats WHERE type != 'private'
+    UNION ALL
+    SELECT 'private' as id, 'All Private Chats' as title, 'private' as type
+    WHERE EXISTS (SELECT 1 FROM chats WHERE type = 'private')
+    ORDER BY CASE WHEN type = 'private' THEN 1 ELSE 0 END, title;
+  `
   const { results } = await c.env.DB.prepare(query).all()
   return c.json(results || [])
 })
@@ -38,6 +44,16 @@ app.get('/api/chats', async (c) => {
 app.get('/api/report', async (c) => {
   const chatId = c.req.query('chat_id')
   if (!chatId) return c.json({ error: 'chat_id is required' }, 400)
+
+  let chatCondition = 'da.chat_id = ?';
+  let chatFilterCondition = 'chat_id = ?';
+  let bindParams = [chatId, chatId];
+
+  if (chatId === 'private') {
+    chatCondition = "da.chat_id IN (SELECT id FROM chats WHERE type = 'private')";
+    chatFilterCondition = "chat_id IN (SELECT id FROM chats WHERE type = 'private')";
+    bindParams = [];
+  }
 
   const query = `
     WITH RECURSIVE dates(date) AS (
@@ -50,7 +66,7 @@ app.get('/api/report', async (c) => {
     chat_users AS (
       SELECT DISTINCT user_id 
       FROM daily_activity 
-      WHERE chat_id = ?
+      WHERE ${chatFilterCondition}
     )
     SELECT 
       u.id as user_id, 
@@ -58,17 +74,17 @@ app.get('/api/report', async (c) => {
       u.first_name, 
       u.last_name,
       SUM(IFNULL(da.message_count, 0)) as total_messages,
-      COUNT(da.date) as days_active,
-      7 - COUNT(da.date) as days_inactive
+      COUNT(DISTINCT da.date) as days_active,
+      7 - COUNT(DISTINCT da.date) as days_inactive
     FROM chat_users cu
     JOIN users u ON cu.user_id = u.id
     CROSS JOIN dates d
-    LEFT JOIN daily_activity da ON cu.user_id = da.user_id AND da.chat_id = ? AND da.date = d.date
+    LEFT JOIN daily_activity da ON cu.user_id = da.user_id AND ${chatCondition} AND da.date = d.date
     GROUP BY u.id
     ORDER BY days_inactive DESC;
   `
   
-  const { results } = await c.env.DB.prepare(query).bind(chatId, chatId).all()
+  const { results } = await c.env.DB.prepare(query).bind(...bindParams).all()
   return c.json(results || [])
 })
 
