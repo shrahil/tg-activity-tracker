@@ -1,4 +1,15 @@
-CREATE TABLE IF NOT EXISTS users (
+DROP TABLE IF EXISTS daily_activity;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS chats;
+
+CREATE TABLE chats (
+    id INTEGER PRIMARY KEY,
+    title TEXT,
+    type TEXT, -- 'private', 'group', 'supergroup', 'channel'
+    first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE users (
     id INTEGER PRIMARY KEY,
     username TEXT,
     first_name TEXT,
@@ -6,10 +17,12 @@ CREATE TABLE IF NOT EXISTS users (
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS daily_activity (
+CREATE TABLE daily_activity (
+    chat_id INTEGER,
     user_id INTEGER,
     date TEXT, -- YYYY-MM-DD format
     message_count INTEGER DEFAULT 0,
-    PRIMARY KEY (user_id, date),
+    PRIMARY KEY (chat_id, user_id, date),
+    FOREIGN KEY (chat_id) REFERENCES chats(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
 );

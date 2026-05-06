@@ -28,16 +28,31 @@ export const frontendHtml = `<!DOCTYPE html>
             max-width: 1000px;
             width: 100%;
         }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
         h1 {
             font-size: 2rem;
-            margin-bottom: 0.5rem;
+            margin: 0;
             background: linear-gradient(to right, #60a5fa, #a78bfa);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        p.subtitle {
-            color: var(--text-secondary);
-            margin-bottom: 2rem;
+        .chat-selector {
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid #334155;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            min-width: 250px;
+        }
+        .chat-selector:focus {
+            border-color: var(--accent);
         }
         .card {
             background-color: var(--card-bg);
@@ -74,6 +89,7 @@ export const frontendHtml = `<!DOCTYPE html>
         .badge.danger { background-color: rgba(239, 68, 68, 0.2); color: #fca5a5; }
         .badge.warning { background-color: rgba(245, 158, 11, 0.2); color: #fcd34d; }
         .badge.success { background-color: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+        .badge.type { background-color: #334155; color: #cbd5e1; margin-left: 0.5rem; font-size: 0.65rem;}
         .user-info {
             display: flex;
             flex-direction: column;
@@ -84,8 +100,15 @@ export const frontendHtml = `<!DOCTYPE html>
 </head>
 <body>
     <div class="container">
-        <h1>Activity Report</h1>
-        <p class="subtitle">Showing inactivity over the last 7 days.</p>
+        <div class="header">
+            <div>
+                <h1>Activity Report</h1>
+                <p style="color: var(--text-secondary); margin-top: 0.25rem;">Showing inactivity over the last 7 days.</p>
+            </div>
+            <select id="chat-select" class="chat-selector" onchange="loadReport()">
+                <option value="">Select a Chat/Group</option>
+            </select>
+        </div>
         
         <div class="card">
             <table id="report-table">
@@ -99,23 +122,49 @@ export const frontendHtml = `<!DOCTYPE html>
                     </tr>
                 </thead>
                 <tbody id="report-body">
-                    <tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+                    <tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Please select a chat above.</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 
     <script>
-        async function loadData() {
+        async function loadChats() {
             try {
-                const res = await fetch('/api/report');
+                const res = await fetch('/api/chats');
+                const chats = await res.json();
+                
+                const select = document.getElementById('chat-select');
+                for (const chat of chats) {
+                    const option = document.createElement('option');
+                    option.value = chat.id;
+                    option.textContent = \`\${chat.title} [\${chat.type}]\`;
+                    select.appendChild(option);
+                }
+            } catch (err) {
+                console.error("Failed to load chats", err);
+            }
+        }
+
+        async function loadReport() {
+            const chatId = document.getElementById('chat-select').value;
+            const tbody = document.getElementById('report-body');
+            
+            if (!chatId) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Please select a chat above.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">Loading...</td></tr>';
+
+            try {
+                const res = await fetch(\`/api/report?chat_id=\${chatId}\`);
                 const data = await res.json();
                 
-                const tbody = document.getElementById('report-body');
                 tbody.innerHTML = '';
                 
                 if (data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">No data available.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">No data available for this chat.</td></tr>';
                     return;
                 }
 
@@ -149,11 +198,11 @@ export const frontendHtml = `<!DOCTYPE html>
                     tbody.appendChild(tr);
                 }
             } catch (err) {
-                document.getElementById('report-body').innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger);">Error loading data.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger);">Error loading data.</td></tr>';
             }
         }
 
-        loadData();
+        loadChats();
     </script>
 </body>
 </html>`;

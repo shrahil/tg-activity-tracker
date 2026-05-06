@@ -11,7 +11,6 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-// Basic Auth Middleware for Admin Routes
 app.use('/admin/*', async (c, next) => {
   const username = c.env.ADMIN_USERNAME || 'admin'
   const password = c.env.ADMIN_PASSWORD || 'admin'
@@ -30,8 +29,16 @@ app.get('/admin', (c) => {
   return c.html(frontendHtml)
 })
 
+app.get('/api/chats', async (c) => {
+  const query = `SELECT id, title, type FROM chats ORDER BY type, title;`
+  const { results } = await c.env.DB.prepare(query).all()
+  return c.json(results || [])
+})
+
 app.get('/api/report', async (c) => {
-  // Report on the last 7 days
+  const chatId = c.req.query('chat_id')
+  if (!chatId) return c.json({ error: 'chat_id is required' }, 400)
+
   const query = `
     WITH RECURSIVE dates(date) AS (
       SELECT date('now', '-6 days')
@@ -39,6 +46,11 @@ app.get('/api/report', async (c) => {
       SELECT date(date, '+1 day')
       FROM dates
       WHERE date < date('now')
+    ),
+    chat_users AS (
+      SELECT DISTINCT user_id 
+      FROM daily_activity 
+      WHERE chat_id = ?
     )
     SELECT 
       u.id as user_id, 
@@ -48,14 +60,15 @@ app.get('/api/report', async (c) => {
       SUM(IFNULL(da.message_count, 0)) as total_messages,
       COUNT(da.date) as days_active,
       7 - COUNT(da.date) as days_inactive
-    FROM users u
+    FROM chat_users cu
+    JOIN users u ON cu.user_id = u.id
     CROSS JOIN dates d
-    LEFT JOIN daily_activity da ON u.id = da.user_id AND da.date = d.date
+    LEFT JOIN daily_activity da ON cu.user_id = da.user_id AND da.chat_id = ? AND da.date = d.date
     GROUP BY u.id
     ORDER BY days_inactive DESC;
   `
   
-  const { results } = await c.env.DB.prepare(query).all()
+  const { results } = await c.env.DB.prepare(query).bind(chatId, chatId).all()
   return c.json(results || [])
 })
 
@@ -63,12 +76,21 @@ app.post('/webhook', async (c) => {
   try {
     const update = await c.req.json()
     
-    // Only track messages
-    if (update.message && update.message.from) {
+    if (update.message && update.message.from && update.message.chat) {
       const user = update.message.from
+      const chat = update.message.chat
       const date = new Date(update.message.date * 1000).toISOString().split('T')[0]
       
-      // 1. Ensure user exists
+      // 1. Ensure chat exists
+      await c.env.DB.prepare(`
+        INSERT INTO chats (id, title, type)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET 
+          title=excluded.title,
+          type=excluded.type
+      `).bind(chat.id, chat.title || chat.first_name || 'Private Chat', chat.type).run()
+
+      // 2. Ensure user exists
       await c.env.DB.prepare(`
         INSERT INTO users (id, username, first_name, last_name)
         VALUES (?, ?, ?, ?)
@@ -78,13 +100,13 @@ app.post('/webhook', async (c) => {
           last_name=excluded.last_name
       `).bind(user.id, user.username || null, user.first_name || null, user.last_name || null).run()
 
-      // 2. Update daily activity
+      // 3. Update daily activity
       await c.env.DB.prepare(`
-        INSERT INTO daily_activity (user_id, date, message_count)
-        VALUES (?, ?, 1)
-        ON CONFLICT(user_id, date) DO UPDATE SET 
+        INSERT INTO daily_activity (chat_id, user_id, date, message_count)
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(chat_id, user_id, date) DO UPDATE SET 
           message_count = message_count + 1
-      `).bind(user.id, date).run()
+      `).bind(chat.id, user.id, date).run()
     }
     
     return c.text('OK')
