@@ -1,0 +1,15 @@
+name = "tg-activity-tracker"
+main = "src/index.ts"
+compatibility_date = "2024-04-05"
+compatibility_flags = ["nodejs_compat"]
+
+# Bindings to D1 database
+[[d1_databases]]
+binding = "DB"
+database_name = "tg-activity-tracker-db"
+database_id = "24ab0193-1d8b-4b48-a492-362a80240dd6"
+
+[vars]
+# TG_BOT_TOKEN = "your_bot_token_here"
+# ADMIN_USERNAME = "admin"
+# ADMIN_PASSWORD = "password"
