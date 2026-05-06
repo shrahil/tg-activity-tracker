@@ -31,11 +31,12 @@ app.get('/admin', (c) => {
 
 app.get('/api/chats', async (c) => {
   const query = `
-    SELECT id, title, type FROM chats WHERE type != 'private'
+    SELECT id, title, type, CASE WHEN type = 'private' THEN 1 ELSE 0 END as sort_order 
+    FROM chats WHERE type != 'private'
     UNION ALL
-    SELECT 'private' as id, 'All Private Chats' as title, 'private' as type
+    SELECT 'private' as id, 'All Private Chats' as title, 'private' as type, 1 as sort_order
     WHERE EXISTS (SELECT 1 FROM chats WHERE type = 'private')
-    ORDER BY CASE WHEN type = 'private' THEN 1 ELSE 0 END, title;
+    ORDER BY sort_order, title;
   `
   const { results } = await c.env.DB.prepare(query).all()
   return c.json(results || [])
@@ -84,7 +85,11 @@ app.get('/api/report', async (c) => {
     ORDER BY days_inactive DESC;
   `
   
-  const { results } = await c.env.DB.prepare(query).bind(...bindParams).all()
+  let stmt = c.env.DB.prepare(query);
+  if (bindParams.length > 0) {
+    stmt = stmt.bind(...bindParams);
+  }
+  const { results } = await stmt.all();
   return c.json(results || [])
 })
 
